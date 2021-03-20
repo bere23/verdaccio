@@ -1,44 +1,26 @@
-/**
- * @prettier
- */
 import fs from 'fs';
 import assert from 'assert';
-import URL from 'url';
-import { IncomingHttpHeaders } from 'http2';
+import DefaultURL, { URL } from 'url';
 import _ from 'lodash';
+import buildDebug from 'debug';
 import semver from 'semver';
 import YAML from 'js-yaml';
+import validator from 'validator';
 import sanitizyReadme from '@verdaccio/readme';
 
 import { Package, Version, Author } from '@verdaccio/types';
 import { Request } from 'express';
-import {
-  getConflict,
-  getBadData,
-  getBadRequest,
-  getInternalError,
-  getUnauthorized,
-  getForbidden,
-  getServiceUnavailable,
-  getNotFound,
-  getCode
-} from '@verdaccio/commons-api';
+// eslint-disable-next-line max-len
+import { getConflict, getBadData, getBadRequest, getInternalError, getUnauthorized, getForbidden, getServiceUnavailable, getNotFound, getCode } from '@verdaccio/commons-api';
 import { generateGravatarUrl, GENERIC_AVATAR } from '../utils/user';
 import { StringValue, AuthorAvatar } from '../../types';
-import {
-  APP_ERROR,
-  DEFAULT_PORT,
-  DEFAULT_DOMAIN,
-  DEFAULT_PROTOCOL,
-  CHARACTER_ENCODING,
-  HEADERS,
-  DIST_TAGS,
-  DEFAULT_USER
-} from './constants';
+import { APP_ERROR, DEFAULT_PORT, DEFAULT_DOMAIN, DEFAULT_PROTOCOL, CHARACTER_ENCODING, HEADERS, DIST_TAGS, DEFAULT_USER } from './constants';
 
 import { normalizeContributors } from './storage-utils';
 
 import { logger } from './logger';
+
+const debug = buildDebug('verdaccio');
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -135,36 +117,36 @@ export function validateMetadata(object: Package, name: string): Package {
   return object;
 }
 
-/**
- * Create base url for registry.
- * @return {String} base registry url
- */
-export function combineBaseUrl(
-  protocol: string,
-  host: string | void,
-  prefix?: string | void
-): string {
-  const result = `${protocol}://${host}`;
-
-  const prefixOnlySlash = prefix === '/';
-  if (prefix && !prefixOnlySlash) {
-    if (prefix.endsWith('/')) {
-      prefix = prefix.slice(0, -1);
-    }
-
-    if (prefix.startsWith('/')) {
-      return `${result}${prefix}`;
-    }
-
-    return prefix;
-  }
-
-  return result;
-}
+// /**
+//  * Create base url for registry.
+//  * @return {String} base registry url
+//  */
+// export function combineBaseUrl(
+//   protocol: string,
+//   host: string | void,
+//   prefix?: string | void
+// ): string {
+//   const result = `${protocol}://${host}`;
+//
+//   const prefixOnlySlash = prefix === '/';
+//   if (prefix && !prefixOnlySlash) {
+//     if (prefix.endsWith('/')) {
+//       prefix = prefix.slice(0, -1);
+//     }
+//
+//     if (prefix.startsWith('/')) {
+//       return `${result}${prefix}`;
+//     }
+//
+//     return prefix;
+//   }
+//
+//   return result;
+// }
 
 export function extractTarballFromUrl(url: string): string {
   // @ts-ignore
-  return URL.parse(url).pathname.replace(/^.*\//, '');
+  return DefaultURL.parse(url).pathname.replace(/^.*\//, '');
 }
 
 /**
@@ -174,11 +156,7 @@ export function extractTarballFromUrl(url: string): string {
  * @param {*} config
  * @return {String} a filtered package
  */
-export function convertDistRemoteToLocalTarballUrls(
-  pkg: Package,
-  req: Request,
-  urlPrefix: string | void
-): Package {
+export function convertDistRemoteToLocalTarballUrls(pkg: Package, req: Request, urlPrefix: string | void): Package {
   for (const ver in pkg.versions) {
     if (Object.prototype.hasOwnProperty.call(pkg.versions, ver)) {
       const distName = pkg.versions[ver].dist;
@@ -196,32 +174,18 @@ export function convertDistRemoteToLocalTarballUrls(
  * @param {*} uri
  * @return {String} a parsed url
  */
-export function getLocalRegistryTarballUri(
-  uri: string,
-  pkgName: string,
-  req: Request,
-  urlPrefix: string | void
-): string {
+export function getLocalRegistryTarballUri(uri: string, pkgName: string, req: Request, urlPrefix: string | void): string {
   const currentHost = req.headers.host;
 
   if (!currentHost) {
     return uri;
   }
   const tarballName = extractTarballFromUrl(uri);
-  const headers = req.headers as IncomingHttpHeaders;
-  const protocol = getWebProtocol(req.get(HEADERS.FORWARDED_PROTO), req.protocol);
-  const domainRegistry = combineBaseUrl(protocol, headers.host, urlPrefix);
+  const domainRegistry = getPublicUrl(urlPrefix || '', req);
 
   return `${domainRegistry}/${encodeScopedUri(pkgName)}/-/${tarballName}`;
 }
 
-/**
- * Create a tag for a package
- * @param {*} data
- * @param {*} version
- * @param {*} tag
- * @return {Boolean} whether a package has been tagged
- */
 export function tagVersion(data: Package, version: string, tag: StringValue): boolean {
   if (tag && data[DIST_TAGS][tag] !== version && semver.parse(version, true)) {
     // valid version - store
@@ -279,7 +243,7 @@ export function parseAddress(urlAddress: any): any {
     return {
       proto: urlPattern[2] || DEFAULT_PROTOCOL,
       host: urlPattern[6] || urlPattern[7] || DEFAULT_DOMAIN,
-      port: urlPattern[8] || DEFAULT_PORT
+      port: urlPattern[8] || DEFAULT_PORT,
     };
   }
 
@@ -288,7 +252,7 @@ export function parseAddress(urlAddress: any): any {
   if (urlPattern) {
     return {
       proto: urlPattern[2] || DEFAULT_PROTOCOL,
-      path: urlPattern[4]
+      path: urlPattern[4],
     };
   }
 
@@ -362,7 +326,7 @@ const parseIntervalTable = {
   d: 86400000,
   w: 7 * 86400000,
   M: 30 * 86400000,
-  y: 365 * 86400000
+  y: 365 * 86400000,
 };
 
 /**
@@ -381,11 +345,7 @@ export function parseInterval(interval: any): number {
       return;
     }
     const m = x.match(/^((0|[1-9][0-9]*)(\.[0-9]+)?)(ms|s|m|h|d|w|M|y|)$/);
-    if (
-      !m ||
-      parseIntervalTable[m[4]] >= last_suffix ||
-      (m[4] === '' && last_suffix !== Infinity)
-    ) {
+    if (!m || parseIntervalTable[m[4]] >= last_suffix || (m[4] === '' && last_suffix !== Infinity)) {
       throw Error('invalid interval: ' + interval);
     }
     last_suffix = parseIntervalTable[m[4]];
@@ -419,7 +379,7 @@ export const ErrorCode = {
   getForbidden,
   getServiceUnavailable,
   getNotFound,
-  getCode
+  getCode,
 };
 
 export function parseConfigFile(configPath: string): any {
@@ -488,9 +448,7 @@ export function deleteProperties(propertiesToDelete: string[], objectItem: any):
 export function addGravatarSupport(pkgInfo: Package, online = true): AuthorAvatar {
   const pkgInfoCopy = { ...pkgInfo } as any;
   const author: any = _.get(pkgInfo, 'latest.author', null) as any;
-  const contributors: AuthorAvatar[] = normalizeContributors(
-    _.get(pkgInfo, 'latest.contributors', [])
-  );
+  const contributors: AuthorAvatar[] = normalizeContributors(_.get(pkgInfo, 'latest.contributors', []));
   const maintainers = _.get(pkgInfo, 'latest.maintainers', []);
 
   // for author.
@@ -503,7 +461,7 @@ export function addGravatarSupport(pkgInfo: Package, online = true): AuthorAvata
     pkgInfoCopy.latest.author = {
       avatar: GENERIC_AVATAR,
       email: '',
-      author
+      author,
     };
   }
 
@@ -517,7 +475,7 @@ export function addGravatarSupport(pkgInfo: Package, online = true): AuthorAvata
           contributor = {
             avatar: GENERIC_AVATAR,
             email: contributor,
-            name: contributor
+            name: contributor,
           };
         }
 
@@ -580,7 +538,7 @@ export function formatAuthor(author: AuthorFormat): any {
   let authorDetails = {
     name: DEFAULT_USER,
     email: '',
-    url: ''
+    url: '',
   };
 
   if (_.isNil(author)) {
@@ -590,14 +548,14 @@ export function formatAuthor(author: AuthorFormat): any {
   if (_.isString(author)) {
     authorDetails = {
       ...authorDetails,
-      name: author as string
+      name: author as string,
     };
   }
 
   if (_.isObject(author)) {
     authorDetails = {
       ...authorDetails,
-      ...(author as Author)
+      ...(author as Author),
     };
   }
 
@@ -660,4 +618,83 @@ export function isRelatedToDeprecation(pkgInfo: Package): boolean {
     }
   }
   return false;
+}
+
+export function validateURL(publicUrl: string | void) {
+  try {
+    const validProtocols = ['https', 'http'];
+
+    const parsed = new URL(publicUrl as string);
+    if (!validProtocols.includes(parsed.protocol.replace(':', ''))) {
+      throw Error('invalid protocol');
+    }
+    return true;
+  } catch (err) {
+    // TODO: add error logger here
+    return false;
+  }
+}
+
+export function isHost(url: string = '', options = {}): boolean {
+  return validator.isURL(url, {
+    require_host: true,
+    allow_trailing_dot: false,
+    require_valid_protocol: false,
+    // @ts-ignore
+    require_port: false,
+    require_tld: false,
+    ...options,
+  });
+}
+
+export function getPublicUrl(url_prefix: string = '', req): string {
+  if (validateURL(process.env.VERDACCIO_PUBLIC_URL as string)) {
+    const envURL = new URL(process.env.VERDACCIO_PUBLIC_URL as string).href;
+    debug('public url by env %o', envURL);
+    return envURL;
+  } else if (req.get('host')) {
+    const host = req.get('host');
+    if (!isHost(host)) {
+      throw new Error('invalid host');
+    }
+    const protocol = getWebProtocol(req.get(HEADERS.FORWARDED_PROTO), req.protocol);
+    const combinedUrl = combineBaseUrl(protocol, host, url_prefix);
+    debug('public url by request %o', combinedUrl);
+    return combinedUrl;
+  } else {
+    return '/';
+  }
+}
+
+/**
+ * Create base url for registry.
+ * @return {String} base registry url
+ */
+export function combineBaseUrl(protocol: string, host: string, prefix: string = ''): string {
+  debug('combined protocol %o', protocol);
+  debug('combined host %o', host);
+  const newPrefix = wrapPrefix(prefix);
+  debug('combined prefix %o', newPrefix);
+  const groupedURI = new URL(wrapPrefix(prefix), `${protocol}://${host}`);
+  const result = stripTrailingSlash(groupedURI.href);
+  debug('combined url %o', result);
+  return result;
+}
+
+const stripTrailingSlash = (str) => {
+  return str.endsWith('/') ? str.slice(0, -1) : str;
+};
+
+function wrapPrefix(prefix: string): string {
+  if (prefix === '' || _.isNil(prefix)) {
+    return '';
+  } else if (!prefix.startsWith('/') && prefix.endsWith('/')) {
+    return `/${prefix}`;
+  } else if (!prefix.startsWith('/') && !prefix.endsWith('/')) {
+    return `/${prefix}/`;
+  } else if (prefix.startsWith('/') && !prefix.endsWith('/')) {
+    return `${prefix}/`;
+  } else {
+    return prefix;
+  }
 }
