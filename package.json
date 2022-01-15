@@ -41,7 +41,7 @@
     "kleur": "4.1.4",
     "lodash": "4.17.21",
     "lunr-mutable-indexes": "2.3.2",
-    "marked": "2.0.1",
+    "marked": "4.0.10",
     "mime": "2.5.2",
     "minimatch": "3.0.4",
     "mkdirp": "0.5.5",
